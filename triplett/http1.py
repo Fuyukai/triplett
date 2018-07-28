@@ -85,7 +85,6 @@ class HTTP11Server(object):
         """
         # send all pending data down the line now
         data = self._buffer.getvalue()
-        print("Sending", data)
         self._buffer = BytesIO()
         await self._sock.send_all(data)
         await self._sock.wait_send_all_might_not_block()
