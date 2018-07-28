@@ -115,10 +115,10 @@ class HTTP11Server(object):
                 if event != h11.NEED_DATA:
                     break
 
-                if isinstance(event, h11.ConnectionClosed):
-                    # thanks for blatantly lying, by setting a keep-alive header then closing the
-                    # connection
-                    return
+            if isinstance(event, h11.ConnectionClosed):
+                # thanks for blatantly lying, by setting a keep-alive header then closing the
+                # connection
+                return
 
             # ok, now we have the initial event
             assert isinstance(event, h11.Request), f"Event was {event}"
