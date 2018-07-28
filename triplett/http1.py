@@ -107,8 +107,6 @@ class HTTP11Server(object):
             if self._keep_alive is False:
                 return
 
-            # we should clear the
-
             # first we want to read the headers from the connection
             while True:
                 data = await self._sock.receive_some(4096)
@@ -117,6 +115,11 @@ class HTTP11Server(object):
 
                 if event != h11.NEED_DATA:
                     break
+
+                if isinstance(event, h11.ConnectionClosed):
+                    # thanks for blatantly lying, by setting a keep-alive header then closing the
+                    # connection
+                    return
 
             # ok, now we have the initial event
             assert isinstance(event, h11.Request), f"Event was {event}"
@@ -136,6 +139,7 @@ class HTTP11Server(object):
                 "method": event.method.decode("utf-8").upper(),
                 "path": path,
                 "query_string": split.query,
+                "headers": event.headers
             }
             application = self._callable(scope)
 

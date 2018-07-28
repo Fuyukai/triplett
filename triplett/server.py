@@ -14,6 +14,7 @@ async def serve_over_tcp(ip: str, port: int, cbl):
     async def _do_the_thing(stream: SocketStream):
         server = HTTP11Server(stream, cbl)
         await server._do_read_loop()
-        print("Server died, F")
+        # if we reach this point we've exited the server loop so we should be able to just close it
+        return await stream.aclose()
 
     await trio.serve_tcp(_do_the_thing, port=port, host=ip)
