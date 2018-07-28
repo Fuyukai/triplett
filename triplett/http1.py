@@ -1,3 +1,4 @@
+import traceback
 from io import BytesIO
 
 import h11 as h11
@@ -79,6 +80,15 @@ class HTTP11Server(object):
         else:
             raise RuntimeError("Unknown type code")
 
+    def _do_shutdown(self):
+        """
+        Performs a shutdown on the server.
+        """
+        for scope in self._cancels:
+            scope.cancel()
+
+        self._canceller.cancel()
+
     async def _send_and_cleanup(self):
         """
         Sends any pending data, and peforms cleanup.
@@ -89,12 +99,20 @@ class HTTP11Server(object):
         await self._sock.send_all(data)
         await self._sock.wait_send_all_might_not_block()
 
-        # ok, we want to cancel *every* receive call
-        for scope in self._cancels:
-            scope.cancel()
+        self._do_shutdown()
 
-        # we also want to cancel our receiver nursery
-        self._canceller.cancel()
+    # TODO: Send a 500 error
+    async def _safety_wrapper(self, fn, send, receive):
+        """
+        Safely wraps a function so that it does not bring down the whole server.
+        """
+        try:
+            await fn(send=send, receive=receive)
+        except Exception:
+            print("Application threw an error!")
+            traceback.print_exc()
+            self._do_shutdown()
+            self._keep_alive = False
 
     # TODO: Oh god, a lot of things.
     async def _do_read_loop(self):
@@ -122,6 +140,7 @@ class HTTP11Server(object):
 
             # ok, now we have the initial event
             assert isinstance(event, h11.Request), f"Event was {event}"
+
             # set keep-alive here for this request
             for header, value in event.headers:
                 if header.lower() == b"connection" and value.lower() == b"keep-alive":
@@ -149,9 +168,9 @@ class HTTP11Server(object):
             # application doesn't want to receive the data.
             async with trio.open_nursery() as n:
                 self._canceller = n.cancel_scope
-                n.start_soon(partial(application,
-                                     send=self._send_callback,
-                                     receive=self._recv_callback))
+                cbl = partial(self._safety_wrapper, application,
+                              send=self._send_callback, receive=self._recv_callback)
+                n.start_soon(cbl)
 
                 async def process_event(ev):
                     if isinstance(ev, h11.Data):
@@ -169,8 +188,7 @@ class HTTP11Server(object):
                     elif isinstance(ev, h11.ConnectionClosed):
                         return
                     else:
-                        # TODO: Handle this better
-                        raise RuntimeError(f"Got non-handlable event {ev}")
+                        pass
                     await self._event_queue.put(d)
 
                 # we may have our end of data already, in which case we don't want to wait any
